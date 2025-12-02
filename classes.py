@@ -1,79 +1,70 @@
 import numpy as np
 from scipy.integrate import solve_ivp
+from skyfield.elementslib import osculating_elements_of
 
 
 G = 6.67430e-11  # Gravitational constant in m^3 kg^-1 s^-2
 
 
+def date_linspace(timescale, date0, date1, num_points):
+    jd_array = np.linspace(date0.tt, date1.tt, num_points)
+    return timescale.tt(jd=jd_array)
+
+
+def date_plus_seconds(date, seconds):
+    return date + seconds / 86400.0  # Convert seconds to days
+
+
 class AstronomicalObject:
-    def __init__(self, name, color, mass, radius, orbit=None):
+    def __init__(self, ephemeris, timescale, name, mass, radius):
+        self.ephemeris = ephemeris
+        self.timescale = timescale
         self.name = name
-        self.color = color
         self.mass = mass
         self.radius = radius
-        self.orbit = orbit
 
+    # Mass dependent
     def get_gravity_acceleration(self, relative_position: np.ndarray) -> np.ndarray:
-        radius = np.linalg.norm(relative_position)
-        multiplier = G * self.mass / radius ** 3
+        r = np.linalg.norm(relative_position)
+        multiplier = G * self.mass / r ** 3
         return -relative_position * multiplier
+
+    def get_sphere_of_influence(self, observer_object, date):
+        r = np.linalg.norm(self.get_relative_position(observer_object, date))
+        return r * (self.mass / observer_object.mass) ** (2 / 5)
 
     def get_orbital_velocity(self, radius):
         return np.sqrt(G * self.mass / radius)
 
-    def get_sphere_of_influence(self):
-        if self.orbit is None:
-            return -1
-        return self.orbit.semimajor_axis * (self.mass / self.orbit.central_body.mass) ** (2 / 5)
+    def get_orbital_period(self, observer_object, date):
+        a = self.get_semimajor_axis(observer_object, date)
+        return 2 * np.pi * np.sqrt(a ** 3 / (G * observer_object.mass))
 
-    def get_position(self, time) -> np.ndarray:
-        t = np.asarray(time)
+    # Mass independent
+    def get_semimajor_axis(self, observer_object, date):
+        rel_pos = self._get_relative_position_data(observer_object, date)
+        elements = osculating_elements_of(rel_pos)
+        return elements.semi_major_axis.m
 
-        if self.orbit is None:
-            # Return shape-consistent results: scalar -> (2,), array -> (N,2)
-            if t.shape == ():
-                return np.array([0.0, 0.0])
-            else:
-                return np.zeros((t.shape[0], 2))
+    def get_relative_position(self, observer_object, date) -> np.ndarray:
+        pos_m = self._get_relative_position_data(observer_object, date).xyz.m
+        return np.array(pos_m)
 
-        return self.orbit.get_position(time)
+    def get_relative_velocity(self, observer_object, date) -> np.ndarray:
+        vel_mps = self._get_relative_position_data(observer_object, date).velocity.m_per_s
+        return np.array(vel_mps)
 
-    def get_velocity(self, time) -> np.ndarray:
-        return self.get_position(time) - self.get_position(time - 1)
+    def _get_relative_position_data(self, observer_object, date):
+        observer = self.ephemeris[observer_object.name]
+        target = self.ephemeris[self.name]
+        return (target - observer).at(date)
 
-    def rel_v_to_abs(self, time, rel_velocity: np.ndarray) -> np.ndarray:
-        return rel_velocity + self.get_velocity(time)
+    # Utils
+    def rel_v_to_abs(self, observer_object, time, rel_velocity: np.ndarray) -> np.ndarray:
+        return rel_velocity + self.get_velocity(observer_object, time)
 
-    def abs_v_to_rel(self, time, abs_velocity: np.ndarray) -> np.ndarray:
-        return abs_velocity - self.get_velocity(time)
-
-
-class Orbit:
-    def __init__(self, central_body, semimajor_axis, eccentricity, periapsis_argument, orbital_period):
-        self.central_body = central_body
-        self.semimajor_axis = semimajor_axis
-        self.eccentricity = eccentricity
-        self.periapsis_argument = periapsis_argument
-        self.orbital_period = orbital_period
-
-    def get_relative_position(self, time) -> np.ndarray:
-        t = np.asarray(time)
-        angle = 2 * np.pi / self.orbital_period * t
-
-        p = self.semimajor_axis * (1 - self.eccentricity ** 2)
-        radius = p / (1 + self.eccentricity * np.cos(angle))
-
-        x = np.cos(angle - self.periapsis_argument) * radius
-        y = np.sin(angle - self.periapsis_argument) * radius
-
-        # Return shape-consistent results: scalar -> (2,), array -> (N,2)
-        if t.shape == ():
-            return np.array([x.item(), y.item()])
-        else:
-            return np.column_stack((x, y))
-
-    def get_position(self, time) -> np.ndarray:
-        return self.get_relative_position(time) + self.central_body.get_position(time)
+    def abs_v_to_rel(self, observer_object, time, abs_velocity: np.ndarray) -> np.ndarray:
+        return abs_velocity - self.get_velocity(observer_object, time)
 
 
 class FlightSolver:

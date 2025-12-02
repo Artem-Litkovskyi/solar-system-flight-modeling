@@ -1,169 +1,195 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.axes
+import skyfield.timelib
 from matplotlib.patches import Circle
+from classes import *
 
+
+PLOTS_DIR = 'plots'
 
 DPI = 150
+ORBIT_RESOLUTION = 100
+ORBIT_PART_DAYS = 15
 
-FULL_ORBIT_RESOLUTION=100
-ORBIT_PART_RESOLUTION=10
-ORBIT_PART_INTERVAL=10*3600
+SUN_SCALE = 15
+PLANET_SCALE = 750
 
-BIG_SUN_SCALE=15
-BIG_PLANET_SCALE=750
+COLORS = {
+    'sun': 'tab:orange',
+    'earth': 'tab:blue',
+    'mars': 'tab:red',
+}
 
 
-def plot_trajectory_system(sun, earth, mars, t0, t1, trajectory_xs, trajectory_ys):
-    earth_orbit = earth.get_position(
-        np.linspace(0, earth.orbit.orbital_period, FULL_ORBIT_RESOLUTION))
-    mars_orbit = mars.get_position(
-        np.linspace(0, mars.orbit.orbital_period, FULL_ORBIT_RESOLUTION))
+def get_color(astro_name):
+    return COLORS.get(astro_name.strip().lower(), 'tab:gray')
 
-    earth_pos0 = earth.get_position(t0)
-    mars_pos0 = mars.get_position(t0)
-    earth_pos1 = earth.get_position(t1)
-    mars_pos1 = mars.get_position(t1)
 
+def get_orbit(timescale, obj, central_obj, date0, date1=None):
+    if date1 is None:
+        period = obj.get_orbital_period(central_obj, date0)
+        date1 = date_plus_seconds(date0, period)
+    orbit_dates = date_linspace(timescale, date0, date1, ORBIT_RESOLUTION)
+    orbit = obj.get_relative_position(central_obj, orbit_dates)
+    return orbit
+
+
+# Full plots
+def plot_trajectory_system(
+        timescale, astro_objects, date0, date1,
+        trajectory_xs, trajectory_ys,
+        margin=0.05, file_prefix=''):
     fig, ax = plt.subplots(figsize=(8,8))
 
-    # Orbits
-    ax.plot(earth_orbit[:,0], earth_orbit[:,1], color=earth.color, alpha=0.5)
-    ax.plot(mars_orbit[:,0], mars_orbit[:,1], color=mars.color, alpha=0.5)
-
-    # Bodies
-    ax.add_patch(Circle(
-        (0, 0), sun.radius*BIG_SUN_SCALE,
-        fill=True, color=sun.color, label=sun.name))
-    ax.add_patch(Circle(
-        (earth_pos0[0], earth_pos0[1]), earth.radius*BIG_PLANET_SCALE,
-        fill=True, color=earth.color, label=f'{earth.name} at Launch'))
-    ax.add_patch(Circle(
-        (mars_pos0[0], mars_pos0[1]), mars.radius*BIG_PLANET_SCALE,
-        fill=True, color=mars.color, label=f'{mars.name} at Launch'))
-    ax.add_patch(Circle(
-        (earth_pos1[0], earth_pos1[1]), earth.radius * BIG_PLANET_SCALE,
-        fill=False, color=earth.color, linestyle='--', label=f'{earth.name} at Arrival'))
-    ax.add_patch(Circle(
-        (mars_pos1[0], mars_pos1[1]), mars.radius * BIG_PLANET_SCALE,
-        fill=False, color=mars.color, linestyle='--', label=f'{mars.name} at Arrival'))
-
-    # Trajectory
-    ax.plot(trajectory_xs, trajectory_ys, color='black', label='Trajectory')
+    xlim, ylim = _draw_astro_objects(timescale, ax, astro_objects, date0, date1)
+    _draw_trajectory_with_radius(ax, trajectory_xs, trajectory_ys)
     # ax.plot(
     #     (trajectory_xs[0], -2*trajectory_xs[0]), (trajectory_ys[0], -2*trajectory_ys[0]),
     #     color='black', linestyle=':', label='Start')
+    _prettify_axes(ax, xlim, ylim, margin=margin, legend_loc='best')
 
-    ax.set_aspect('equal', 'box')
-    ax.set_xlabel('x (m)')
-    ax.set_ylabel('y (m)')
-    ax.legend()
-
-    # Autoscale: include orbits and SOI
-    all_x = np.concatenate([earth_orbit[:,0], mars_orbit[:,0]])
-    all_y = np.concatenate([earth_orbit[:,1], mars_orbit[:,1]])
-    margin = 0.05 * max(np.ptp(all_x), np.ptp(all_y))
-    ax.set_xlim(all_x.min()-margin, all_x.max()+margin)
-    ax.set_ylim(all_y.min()-margin, all_y.max()+margin)
-
-    _save('plots/Solar_system.png')
+    _save('Solar_system.png', prefix=file_prefix)
 
 
-def plot_trajectory_planet_and_soi(planet, planet_soi, trajectory_xs, trajectory_ys, radius_i, radius_length, orbit_t):
+def plot_trajectory_obj_and_soi(
+        timescale, obj, central_obj, orbit_date,
+        trajectory_xs, trajectory_ys,
+        radius_i=None,
+        margin_obj=-0.48, margin_soi=0.05, file_prefix=''
+):
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10,5))
 
-    lim1 = (-planet.radius * 8, planet.radius * 8)
-    lim2 = (-planet_soi * 1.05, planet_soi * 1.05)
+    xlim1, ylim1 = _draw_obj_with_soi(timescale, axs[0], obj, central_obj, orbit_date)
+    _draw_trajectory_with_radius(axs[0], trajectory_xs, trajectory_ys, radius_i=radius_i)
+    _prettify_axes(axs[0], xlim1, ylim1, margin=margin_obj)
 
-    _draw(axs[0], planet, planet_soi, orbit_t,
-          trajectory_xs, trajectory_ys, lim1, lim1,
-          radius_i=radius_i, radius_length=radius_length)
-    _draw(axs[1], planet, planet_soi, orbit_t,
-          trajectory_xs, trajectory_ys, lim2, lim2,
-          radius_i=radius_i, radius_length=radius_length)
+    xlim2, ylim2 = _draw_obj_with_soi(timescale, axs[1], obj, central_obj, orbit_date)
+    _draw_trajectory_with_radius(axs[1], trajectory_xs, trajectory_ys, radius_i=radius_i)
+    _prettify_axes(axs[1], xlim2, ylim2, margin=margin_soi, legend_loc='upper right')
 
-    axs[1].legend(loc='upper right')
-
-    _save(f'plots/{planet.name}_and_SOI.png')
+    _save(f'{obj.name}_and_SOI.png', prefix=file_prefix)
 
 
-def plot_trajectories_planet(
-        planet,
-        trajectory1_xs, trajectory1_ys,
-        trajectory2_xs, trajectory2_ys,
-        radius_i, radius_length, orbit_t):
-    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
+# Drawing helpers
+def _draw_astro_objects(
+        timescale: skyfield.timelib.Timescale,
+        ax: matplotlib.axes._axes.Axes,
+        astro_objects: list[AstronomicalObject],
+        date0: skyfield.timelib.Time,
+        date1: skyfield.timelib.Time,
+        central_obj_scale=SUN_SCALE,
+        astro_obj_scale=PLANET_SCALE
+):
+    central_obj = astro_objects[0]
 
-    lim = (-planet.radius * 8, planet.radius * 8)
+    xlim, ylim = [0, 0], [0, 0]
 
-    _draw(axs[0], planet, -1, orbit_t,
-          trajectory1_xs, trajectory1_ys, lim, lim,
-          radius_i=radius_i, radius_length=radius_length)
-    _draw(axs[1], planet, -1, orbit_t,
-          trajectory2_xs, trajectory2_ys, lim, lim,
-          radius_i=radius_i, radius_length=radius_length)
+    # Plot orbits
+    for obj in astro_objects[1:]:
+        orbit = get_orbit(timescale, obj, central_obj, date0)
+        xlim[0] = min(xlim[0], orbit[0].min())
+        xlim[1] = max(xlim[1], orbit[0].max())
+        ylim[0] = min(ylim[0], orbit[1].min())
+        ylim[1] = max(ylim[1], orbit[1].max())
+        ax.plot(orbit[0], orbit[1], color=get_color(obj.name), alpha=0.5)
 
-    axs[0].legend(loc='upper right')
-    axs[1].legend(loc='upper right')
-
-    _save(f'plots/{planet.name}_trajectories.png')
-
-
-def plot_trajectories_soi(
-        planet, planet_soi,
-        trajectory1_xs, trajectory1_ys, radius1_i, radius1_length, orbit1_t,
-        trajectory2_xs, trajectory2_ys, radius2_i, radius2_length, orbit2_t):
-    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
-
-    lim = (-planet_soi * 1.5, planet_soi * 1.5)
-
-    _draw(axs[0], planet, planet_soi, orbit1_t,
-          trajectory1_xs, trajectory1_ys, lim, lim,
-          radius_i=radius1_i, radius_length=radius1_length)
-    _draw(axs[1], planet, planet_soi, orbit2_t,
-          trajectory2_xs, trajectory2_ys, lim, lim,
-          radius_i=radius2_i, radius_length=radius2_length)
-
-    axs[0].legend(loc='upper right')
-    axs[1].legend(loc='upper right')
-
-    _save(f'plots/{planet.name}_SOI_trajectories.png')
-
-
-def _draw(
-        ax, planet, planet_soi, orbit_t,
-        trajectory_xs, trajectory_ys, xlim, ylim,
-        radius_i=None, radius_length=None):
+    # Plot positions
     ax.add_patch(Circle(
-        (0, 0), planet.radius,
-        fill=True, color=planet.color, zorder=5, label=planet.name))
+        (0, 0), central_obj.radius * central_obj_scale,
+        fill=True, color=get_color(central_obj.name), label=central_obj.name))
 
-    planet_orbit = planet.get_position(  # Relative to (0, 0)
-        np.linspace(orbit_t - ORBIT_PART_INTERVAL, orbit_t + ORBIT_PART_INTERVAL, ORBIT_PART_RESOLUTION))
-    planet_orbit -= planet.get_position(orbit_t)  # Make relative to planet at time t
-    ax.plot(planet_orbit[:, 0], planet_orbit[:, 1], color=planet.color, alpha=0.5, label=f'Orbit')
-
-    if planet_soi > 0:
+    for obj in astro_objects[1:]:
+        lbl = obj.name
+        clr = get_color(obj.name)
         ax.add_patch(Circle(
-            (0, 0), planet_soi,
-            fill=False, color=planet.color, linestyle='--', label='Sphere of Influence'))
+            obj.get_relative_position(central_obj, date0), obj.radius * astro_obj_scale,
+            fill=True, color=clr, label=f'{lbl} at Launch'))
+        ax.add_patch(Circle(
+            obj.get_relative_position(central_obj, date1), obj.radius * astro_obj_scale,
+            fill=False, color=clr, linestyle='--', label=f'{lbl} at Arrival'))
 
+    return xlim, ylim
+
+
+def _draw_obj_with_soi(
+        timescale: skyfield.timelib.Timescale,
+        ax: matplotlib.axes._axes.Axes,
+        obj: AstronomicalObject,
+        central_obj: AstronomicalObject,
+        orbit_date: skyfield.timelib.Time
+):
+    clr = get_color(obj.name)
+
+    # Plot object
+    ax.add_patch(Circle(
+        (0, 0), obj.radius,
+        fill=True, color=clr, zorder=5, label=obj.name))
+
+    # Plot object's SOI
+    soi_radius = obj.get_sphere_of_influence(central_obj, orbit_date)
+    ax.add_patch(Circle(
+        (0, 0), soi_radius,
+        fill=False, color=clr, linestyle='--', label='Sphere of Influence'))
+
+    # Plot orbit
+    orbit = get_orbit(timescale, obj, central_obj, orbit_date - ORBIT_PART_DAYS, orbit_date + ORBIT_PART_DAYS)
+    pos = obj.get_relative_position(central_obj, orbit_date)
+    print(orbit[:, 0:3])
+    print(pos)
+    orbit -= pos[:, None]  # Make relative to obj
+    print(orbit[:, 0:3])
+    ax.plot(orbit[0], orbit[1], color=clr, alpha=0.5, label='Orbit')
+
+    return (-soi_radius, soi_radius), (-soi_radius, soi_radius)
+
+
+def _draw_trajectory_with_radius(
+        ax: matplotlib.axes._axes.Axes,
+        trajectory_xs: np.ndarray, trajectory_ys: np.ndarray,
+        radius_i: int = None
+):
     ax.plot(trajectory_xs, trajectory_ys, color='black', label='Trajectory')
 
     if radius_i is not None:
-        ax.plot((0, trajectory_xs[radius_i]), (0, trajectory_ys[radius_i]),
-                color='black', linestyle=':', label=f'Radius ({radius_length/1000:.1f} km)')
+        r_x = trajectory_xs[radius_i]
+        r_y = trajectory_ys[radius_i]
+        r = np.hypot(r_x, r_y)
+        ax.plot((0, r_x), (0, r_y),
+                color='black', linestyle=':', label=f'Radius ({r / 1000:.1f} km)')
 
+
+def _prettify_axes(
+        ax: matplotlib.axes._axes.Axes,
+        xlim: list[float],
+        ylim: list[float],
+        margin=0.1,
+        legend_loc=None
+):
     ax.set_aspect('equal', 'box')
+
+    m = margin * max(xlim[1] - xlim[0], ylim[1] - ylim[0])
+    ax.set_xlim(xlim[0] - m, xlim[1] + m)
+    ax.set_ylim(ylim[0] - m, ylim[1] + m)
+
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
+
+    if legend_loc is not None:
+        ax.legend(loc=legend_loc)
 
 
-def _save(out_path):
-    if not os.path.exists(out_path):
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+def _save(filename, prefix=''):
+    full_filename = filename
+    if prefix:
+        full_filename = prefix + full_filename
+    full_path = os.path.join(PLOTS_DIR, full_filename)
+
+    if not os.path.exists(full_path):
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
     plt.tight_layout()
-    plt.savefig(out_path, dpi=DPI)
-    print(f'Plot saved to {out_path}')
+    plt.savefig(full_path, dpi=DPI)
+
+    print(f'Plot saved to {full_path}')
