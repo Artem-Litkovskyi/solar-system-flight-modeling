@@ -1,5 +1,7 @@
+from core import AstronomicalObject
 from skyfield.api import load
-from classes import *
+
+__all__ = ['EPHEMERIS', 'TIMESCALE', 'SUN', 'EARTH', 'MARS']
 
 EPHEMERIS = load('de421.bsp')
 TIMESCALE = load.timescale()

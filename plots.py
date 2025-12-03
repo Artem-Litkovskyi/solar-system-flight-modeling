@@ -4,7 +4,15 @@ import matplotlib.pyplot as plt
 import matplotlib.axes
 import skyfield.timelib
 from matplotlib.patches import Circle
-from classes import *
+from typing import Sequence
+from core import *
+
+
+__all__ = [
+    'get_color', 'get_orbit',
+    'plot_trajectory_system',
+    'plot_trajectory_obj_and_soi',
+]
 
 
 PLOTS_DIR = 'plots'
@@ -76,7 +84,7 @@ def plot_trajectory_obj_and_soi(
 def _draw_astro_objects(
         timescale: skyfield.timelib.Timescale,
         ax: matplotlib.axes._axes.Axes,
-        astro_objects: list[AstronomicalObject],
+        astro_objects: Sequence[AstronomicalObject],
         date0: skyfield.timelib.Time,
         date1: skyfield.timelib.Time,
         central_obj_scale=SUN_SCALE,
@@ -162,8 +170,8 @@ def _draw_trajectory_with_radius(
 
 def _prettify_axes(
         ax: matplotlib.axes._axes.Axes,
-        xlim: list[float],
-        ylim: list[float],
+        xlim: Sequence[float],
+        ylim: Sequence[float],
         margin=0.1,
         legend_loc=None
 ):

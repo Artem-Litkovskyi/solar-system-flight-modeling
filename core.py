@@ -1,9 +1,22 @@
 import numpy as np
+import skyfield.timelib
+import skyfield.positionlib
+from typing import Self, Sequence
 from scipy.integrate import solve_ivp
 from skyfield.elementslib import osculating_elements_of
 
 
+__all__ = [
+    'G', 'DAYS_TO_SECONDS', 'HOURS_TO_SECONDS',
+    'date_linspace', 'date_plus_seconds',
+    'AstronomicalObject',
+    'FlightSolver', 'FlightSolverResult'
+]
+
+
 G = 6.67430e-11  # Gravitational constant in m^3 kg^-1 s^-2
+DAYS_TO_SECONDS = 86400.0
+HOURS_TO_SECONDS = 3600.0
 
 
 def date_linspace(timescale, date0, date1, num_points):
@@ -12,7 +25,13 @@ def date_linspace(timescale, date0, date1, num_points):
 
 
 def date_plus_seconds(date, seconds):
-    return date + seconds / 86400.0  # Convert seconds to days
+    return date + seconds / DAYS_TO_SECONDS
+
+
+def zeros_2d(date):
+    if date.shape:
+        return np.zeros((2, date.shape))
+    return np.zeros(2)
 
 
 class AstronomicalObject:
@@ -29,90 +48,58 @@ class AstronomicalObject:
         multiplier = G * self.mass / r ** 3
         return -relative_position * multiplier
 
-    def get_sphere_of_influence(self, observer_object, date):
+    def get_sphere_of_influence(self, observer_object: Self, date) -> float | np.ndarray:
+        if observer_object is self:
+            raise ValueError('Sphere of influence is not defined if observer_object is the same object.')
         r = np.linalg.norm(self.get_relative_position(observer_object, date))
         return r * (self.mass / observer_object.mass) ** (2 / 5)
 
-    def get_orbital_velocity(self, radius):
+    def get_orbital_velocity(self, radius) -> float | np.ndarray:
         return np.sqrt(G * self.mass / radius)
 
-    def get_orbital_period(self, observer_object, date):
+    def get_orbital_period(self, observer_object: Self, date) -> float | np.ndarray:
+        if observer_object is self:
+            raise ValueError('Orbital period is not defined if observer_object is the same object.')
         a = self.get_semimajor_axis(observer_object, date)
         return 2 * np.pi * np.sqrt(a ** 3 / (G * observer_object.mass))
 
     # Mass independent
-    def get_semimajor_axis(self, observer_object, date):
-        rel_pos = self._get_relative_position_data(observer_object, date)
+    def get_semimajor_axis(self, observer_object: Self, date) -> float | np.ndarray:
+        if observer_object is self:
+            raise ValueError('Semimajor axis is not defined if observer_object is the same object.')
+        rel_pos = self._get_pos_data(observer_object, date)
         elements = osculating_elements_of(rel_pos)
         return elements.semi_major_axis.m
 
-    def get_relative_position(self, observer_object, date) -> np.ndarray:
-        pos_m = self._get_relative_position_data(observer_object, date).xyz.m
-        return np.array(pos_m)
+    def get_relative_position(self, observer_object: Self, date) -> np.ndarray:
+        if observer_object is self:
+            return zeros_2d(date)
+        pos_m = self._get_pos_data(observer_object, date).xyz.m
+        return pos_m[:2]
 
-    def get_relative_velocity(self, observer_object, date) -> np.ndarray:
-        vel_mps = self._get_relative_position_data(observer_object, date).velocity.m_per_s
-        return np.array(vel_mps)
+    def get_relative_velocity(self, observer_object: Self, date) -> np.ndarray:
+        if observer_object is self:
+            return zeros_2d(date)
+        vel_mps = self._get_pos_data(observer_object, date).velocity.m_per_s
+        return vel_mps[:2]
 
-    def _get_relative_position_data(self, observer_object, date):
+    def _get_pos_data(self, observer_object: Self, date) -> skyfield.positionlib.Barycentric:
         observer = self.ephemeris[observer_object.name]
         target = self.ephemeris[self.name]
-        return (target - observer).at(date)
+        pos_data = (target - observer).at(date)
+
+        # Force to 2D: zero out z coordinate
+        pos_data.xyz.au[2] *= 0
+        pos_data.velocity.au_per_d[2] *= 0
+
+        return pos_data
 
     # Utils
-    def rel_v_to_abs(self, observer_object, time, rel_velocity: np.ndarray) -> np.ndarray:
-        return rel_velocity + self.get_velocity(observer_object, time)
+    def rel_v_to_abs(self, observer_object: Self, date, rel_velocity: np.ndarray) -> np.ndarray:
+        return rel_velocity + self.get_relative_velocity(observer_object, date)
 
-    def abs_v_to_rel(self, observer_object, time, abs_velocity: np.ndarray) -> np.ndarray:
-        return abs_velocity - self.get_velocity(observer_object, time)
-
-
-class FlightSolver:
-    def __init__(self, rtol=1e-12, atol=1e-12):
-        self.rtol = rtol
-        self.atol = atol
-
-    @staticmethod
-    def _flight_ode_simple(t, state, astro_object):
-        x, y, vx, vy = state
-        g = astro_object.get_gravity_acceleration(np.array([x, y]))
-        return [vx, vy, g[0], g[1]]
-
-    @staticmethod
-    def _flight_ode_multi(t, state, astro_objects):
-        x, y, vx, vy = state
-        g = sum(
-            obj.get_gravity_acceleration(np.array([x, y]) - obj.get_position(t))
-            for obj in astro_objects
-        )
-        return [vx, vy, g[0], g[1]]
-
-    def solve(self, astro_objects, x0, y0, vx0, vy0, t_span, points_per_hour=5):
-        """
-        If astro_objects is a single AstronomicalObject, coordinates are considered to be relative.
-        If astro_objects is a list of AstronomicalObjects, coordinates are considered to be absolute.
-
-        :param astro_objects: target AstronomicalObjects
-        :param x0: starting x coordinate
-        :param y0: starting y coordinate
-        :param vx0: starting x velocity
-        :param vy0: starting y velocity
-        :param t_span: interval of integration (t0, tf)
-        :param points_per_hour: number of trajectory points per hour
-        """
-
-        delta_time = t_span[1] - t_span[0]
-        t_eval = np.linspace(*t_span, int(delta_time / 3600 * points_per_hour))
-
-        fun = self._flight_ode_simple if isinstance(astro_objects, AstronomicalObject) else self._flight_ode_multi
-
-        sol = solve_ivp(
-            lambda t, state: fun(t, state, astro_objects),
-            t_span, [x0, y0, vx0, vy0], t_eval=t_eval,
-            rtol=self.rtol, atol=self.atol,
-        )
-
-        return FlightSolverResult(sol.t, *sol.y)
+    def abs_v_to_rel(self, observer_object: Self, date, abs_velocity: np.ndarray) -> np.ndarray:
+        return abs_velocity - self.get_relative_velocity(observer_object, date)
 
 
 class FlightSolverResult:
@@ -195,3 +182,60 @@ class FlightSolverResult:
         best_i = candidate_indices[np.argmin(r_norm[candidate_indices])]
 
         return best_i, r_norm[best_i], deviation_deg[best_i]
+
+
+class FlightSolver:
+    def __init__(self, timescale: skyfield.timelib.Timescale, method='RK45', rtol=1e-11, atol=1e-8):
+        self.timescale = timescale
+        self.method = method
+        self.rtol = rtol
+        self.atol = atol
+
+    def solve(
+            self, astro_objects: Sequence[AstronomicalObject],
+            x0: float, y0: float, vx0: float, vy0: float,
+            date_span: Sequence[skyfield.timelib.Time],
+            points_per_day: int | None = None
+    ) -> FlightSolverResult:
+        """
+        Calculates spacecraft trajectory. Coordinates are relative to the first AstronomicalObject.
+
+        :param astro_objects: target AstronomicalObjects
+        :param x0: spacecraft x position
+        :param y0: spacecraft y position
+        :param vx0: spacecraft x velocity
+        :param vy0: spacecraft y velocity
+        :param date_span: interval of integration (date0, date1)
+        :param points_per_day: number of trajectory points per day
+        """
+
+        t_start = float(date_span[0].tt * DAYS_TO_SECONDS)
+        t_end = float(date_span[1].tt * DAYS_TO_SECONDS)
+
+        t_eval = None
+        if points_per_day:
+            delta_seconds = t_end - t_start
+            t_eval = np.linspace(t_start, t_end, int(delta_seconds / DAYS_TO_SECONDS * points_per_day))
+
+        sol = solve_ivp(
+            fun=self._flight_ode,
+            t_span=(t_start, t_end),
+            y0=[x0, y0, vx0, vy0],
+            method=self.method,
+            t_eval=t_eval,
+            args=astro_objects,
+            rtol=self.rtol,
+            atol=self.atol
+        )
+
+        return FlightSolverResult(sol.t, *sol.y)
+
+    def _flight_ode(self, t, state, *astro_objects):
+        date = self.timescale.tt_jd(t / DAYS_TO_SECONDS)
+        x, y, vx, vy = state
+        central_obj = astro_objects[0]
+        g = sum(
+            obj.get_gravity_acceleration(np.array([x, y]) - obj.get_relative_position(central_obj, date))
+            for obj in astro_objects
+        )
+        return [vx, vy, g[0], g[1]]
