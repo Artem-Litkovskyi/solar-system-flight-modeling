@@ -5,8 +5,8 @@ from tools.tables import *
 
 
 orbit_r = 8000e3
-orbit_v = EARTH.get_orbital_velocity(orbit_r)
-orbit_period = 2 * np.pi * orbit_r / orbit_v
+orbit_v = EARTH.get_circular_orbit_velocity(orbit_r)
+orbit_period = EARTH.get_orbit_period(orbit_r)
 
 date0 = TIMESCALE.utc(2025, 12, 1, 12)
 date1 = date_plus_seconds(date0, orbit_period)
@@ -56,7 +56,7 @@ def get_error(method, rtol, atol):
     res = solver.solve(
         [EARTH],
         x0=orbit_r, y0=0,
-        vx0=0, vy0=EARTH.get_orbital_velocity(orbit_r),
+        vx0=0, vy0=EARTH.get_circular_orbit_velocity(orbit_r),
         date_span=(date0, date1)
     )
 

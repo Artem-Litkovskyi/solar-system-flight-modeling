@@ -3,7 +3,7 @@ import os
 
 __all__ = ['make_table']
 
-TABLES_DIR = '../tables'
+TABLES_DIR = './tables'
 
 
 def make_table(

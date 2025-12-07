@@ -17,10 +17,10 @@ __all__ = [
 ]
 
 
-PLOTS_DIR = '../plots'
+PLOTS_DIR = './plots'
 
 DPI = 150
-ORBIT_RESOLUTION = 100
+ORBIT_RESOLUTION = 200
 ORBIT_PART_DAYS = 15
 
 SUN_SCALE = 15
@@ -39,7 +39,7 @@ def get_color(astro_name):
 
 def get_orbit(timescale, obj, central_obj, date0, date1=None):
     if date1 is None:
-        period = obj.get_orbital_period(central_obj, date0)
+        period = obj.get_object_orbital_period(central_obj, date0)
         date1 = date_plus_seconds(date0, period)
     orbit_dates = date_linspace(timescale, date0, date1, ORBIT_RESOLUTION)
     orbit = obj.get_relative_position(central_obj, orbit_dates)
@@ -146,10 +146,7 @@ def _draw_obj_with_soi(
     # Plot orbit
     orbit = get_orbit(timescale, obj, central_obj, orbit_date - ORBIT_PART_DAYS, orbit_date + ORBIT_PART_DAYS)
     pos = obj.get_relative_position(central_obj, orbit_date)
-    print(orbit[:, 0:3])
-    print(pos)
     orbit -= pos[:, None]  # Make relative to obj
-    print(orbit[:, 0:3])
     ax.plot(orbit[0], orbit[1], color=clr, alpha=0.5, label='Orbit')
 
     return (-soi_radius, soi_radius), (-soi_radius, soi_radius)
@@ -193,7 +190,7 @@ def _prettify_axes(
 def _save(filename, prefix=''):
     full_filename = filename
     if prefix:
-        full_filename = prefix + full_filename
+        full_filename = prefix + '_' + full_filename
     full_path = os.path.join(PLOTS_DIR, full_filename)
 
     if not os.path.exists(full_path):

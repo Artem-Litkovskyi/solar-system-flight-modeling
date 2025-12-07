@@ -1,12 +1,14 @@
 from skyfield.api import Loader
-from tools.core import AstronomicalObject
+from tools.core import AstronomicalObject, FlightSolver
 
-__all__ = ['EPHEMERIS', 'TIMESCALE', 'SUN', 'EARTH', 'MARS']
+__all__ = ['EPHEMERIS', 'TIMESCALE', 'SOLVER', 'SUN', 'EARTH', 'MARS']
 
 load = Loader('./skyfield_data')
 
 EPHEMERIS = load('de421.bsp')
 TIMESCALE = load.timescale()
+
+SOLVER = FlightSolver(TIMESCALE, method='RK45', rtol=1e-11, atol=1e-8)
 
 SUN = AstronomicalObject(
     ephemeris=EPHEMERIS,

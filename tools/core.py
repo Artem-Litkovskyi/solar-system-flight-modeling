@@ -8,7 +8,8 @@ import skyfield.timelib
 
 __all__ = [
     'G', 'DAYS_TO_SECONDS', 'HOURS_TO_SECONDS',
-    'date_linspace', 'date_plus_seconds',
+    'date_linspace', 'date_plus_seconds', 'seconds_to_date',
+    'rotate_vector',
     'AstronomicalObject',
     'FlightSolver', 'FlightSolverResult'
 ]
@@ -21,14 +22,26 @@ HOURS_TO_SECONDS = 3600.0
 
 def date_linspace(timescale, date0, date1, num_points):
     jd_array = np.linspace(date0.tt, date1.tt, num_points)
-    return timescale.tt(jd=jd_array)
+    return timescale.tt_jd(jd_array)
 
 
 def date_plus_seconds(date, seconds):
     return date + seconds / DAYS_TO_SECONDS
 
 
-def zeros_2d(date):
+def seconds_to_date(timescale, t):
+    return timescale.tt_jd(t / DAYS_TO_SECONDS)
+
+
+def rotate_vector(v, theta):
+    r = np.array([
+        [np.cos(theta), -np.sin(theta)],
+        [np.sin(theta),  np.cos(theta)]
+    ])
+    return r @ v
+
+
+def _zeros_2d(date):
     if date.shape:
         return np.zeros((2, date.shape))
     return np.zeros(2)
@@ -54,39 +67,43 @@ class AstronomicalObject:
         r = np.linalg.norm(self.get_relative_position(observer_object, date))
         return r * (self.mass / observer_object.mass) ** (2 / 5)
 
-    def get_orbital_velocity(self, radius) -> float | np.ndarray:
+    def get_circular_orbit_velocity(self, radius) -> float | np.ndarray:
         return np.sqrt(G * self.mass / radius)
 
-    def get_orbital_period(self, observer_object: Self, date) -> float | np.ndarray:
-        if observer_object is self:
-            raise ValueError('Orbital period is not defined if observer_object is the same object.')
-        a = self.get_semimajor_axis(observer_object, date)
-        return 2 * np.pi * np.sqrt(a ** 3 / (G * observer_object.mass))
+    def get_elliptical_orbit_velocity(self, semimajor, current_radius) -> float | np.ndarray:
+        return np.sqrt(G * self.mass * (2 / current_radius - 1 / semimajor))
+
+    def get_orbital_period(self, semimajor) -> float | np.ndarray:
+        return 2 * np.pi * np.sqrt(semimajor ** 3 / (G * self.mass))
 
     # Mass independent
-    def get_semimajor_axis(self, observer_object: Self, date) -> float | np.ndarray:
+    def get_object_orbital_period(self, observer_object: Self, date) -> float | np.ndarray:
         if observer_object is self:
-            raise ValueError('Semimajor axis is not defined if observer_object is the same object.')
+            raise ValueError('Orbital period is not defined if observer_object is the same object.')
         rel_pos = self._get_pos_data(observer_object, date)
         elements = osculating_elements_of(rel_pos)
-        return elements.semi_major_axis.m
+        return elements.period_in_days * DAYS_TO_SECONDS
 
     def get_relative_position(self, observer_object: Self, date) -> np.ndarray:
         if observer_object is self:
-            return zeros_2d(date)
-        pos_m = self._get_pos_data(observer_object, date).xyz.m
+            return _zeros_2d(date)
+        pos_m = self._get_pos_data_2d(observer_object, date).xyz.m
         return pos_m[:2]
 
     def get_relative_velocity(self, observer_object: Self, date) -> np.ndarray:
         if observer_object is self:
-            return zeros_2d(date)
-        vel_mps = self._get_pos_data(observer_object, date).velocity.m_per_s
+            return _zeros_2d(date)
+        vel_mps = self._get_pos_data_2d(observer_object, date).velocity.m_per_s
         return vel_mps[:2]
 
     def _get_pos_data(self, observer_object: Self, date) -> skyfield.positionlib.Barycentric:
         observer = self.ephemeris[observer_object.name]
         target = self.ephemeris[self.name]
         pos_data = (target - observer).at(date)
+        return pos_data
+
+    def _get_pos_data_2d(self, observer_object: Self, date) -> skyfield.positionlib.Barycentric:
+        pos_data = self._get_pos_data(observer_object, date)
 
         # Force to 2D: zero out z coordinate
         pos_data.xyz.au[2] *= 0
@@ -122,7 +139,7 @@ class FlightSolverResult:
     def __getitem__(self, key):
         return FlightSolverResult(self.t[key], self.x[key], self.y[key], self.vx[key], self.vy[key])
 
-    def with_offset(self, offset: np.ndarray):
+    def with_pos_offset(self, offset: np.ndarray):
         return FlightSolverResult(self.t, self.x + offset[0], self.y + offset[1], self.vx, self.vy)
 
     def find_closest_point(self, astro_object=None):
@@ -217,7 +234,7 @@ class FlightSolver:
             delta_seconds = t_end - t_start
             t_eval = np.linspace(t_start, t_end, int(delta_seconds / DAYS_TO_SECONDS * points_per_day))
 
-        sol = solve_ivp(
+        sol = solve_ivp(  # type: ignore
             fun=self._flight_ode,
             t_span=(t_start, t_end),
             y0=[x0, y0, vx0, vy0],
