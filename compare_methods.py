@@ -1,7 +1,7 @@
 import numpy as np
-from core import *
-from instances import *
-from tables import *
+from tools.core import *
+from tools.instances import *
+from tools.tables import *
 
 
 orbit_r = 8000e3

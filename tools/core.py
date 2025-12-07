@@ -1,9 +1,9 @@
-import numpy as np
-import skyfield.timelib
-import skyfield.positionlib
 from typing import Self, Sequence
+import numpy as np
 from scipy.integrate import solve_ivp
 from skyfield.elementslib import osculating_elements_of
+import skyfield.positionlib
+import skyfield.timelib
 
 
 __all__ = [

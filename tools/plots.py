@@ -1,11 +1,13 @@
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.axes
-import skyfield.timelib
-from matplotlib.patches import Circle
 from typing import Sequence
-from core import *
+
+import matplotlib.axes
+from matplotlib.patches import Circle
+import matplotlib.pyplot as plt
+import numpy as np
+import skyfield.timelib
+
+from tools.core import *
 
 
 __all__ = [
@@ -15,7 +17,7 @@ __all__ = [
 ]
 
 
-PLOTS_DIR = 'plots'
+PLOTS_DIR = '../plots'
 
 DPI = 150
 ORBIT_RESOLUTION = 100

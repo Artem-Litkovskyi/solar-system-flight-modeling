@@ -1,7 +1,9 @@
-from core import AstronomicalObject
-from skyfield.api import load
+from skyfield.api import Loader
+from tools.core import AstronomicalObject
 
 __all__ = ['EPHEMERIS', 'TIMESCALE', 'SUN', 'EARTH', 'MARS']
+
+load = Loader('./skyfield_data')
 
 EPHEMERIS = load('de421.bsp')
 TIMESCALE = load.timescale()
