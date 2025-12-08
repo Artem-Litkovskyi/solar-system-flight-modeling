@@ -67,7 +67,7 @@ def plot_trajectory_obj_and_soi(
         timescale, obj, central_obj, orbit_date,
         trajectory_xs, trajectory_ys,
         radius_i=None,
-        margin_obj=-0.48, margin_soi=0.05, file_prefix=''
+        margin_obj=-0.46, margin_soi=0.05, file_prefix=''
 ):
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10,5))
 

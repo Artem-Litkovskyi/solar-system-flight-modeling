@@ -9,7 +9,7 @@ import skyfield.timelib
 __all__ = [
     'G', 'DAYS_TO_SECONDS', 'HOURS_TO_SECONDS',
     'date_linspace', 'date_plus_seconds', 'seconds_to_date',
-    'rotate_vector',
+    'rotate_vector', 'relative_error',
     'AstronomicalObject',
     'FlightSolver', 'FlightSolverResult'
 ]
@@ -39,6 +39,10 @@ def rotate_vector(v, theta):
         [np.sin(theta),  np.cos(theta)]
     ])
     return r @ v
+
+
+def relative_error(a, b):
+    return np.abs(a - b) / np.abs(b)
 
 
 def _zeros_2d(date):
@@ -142,63 +146,33 @@ class FlightSolverResult:
     def with_pos_offset(self, offset: np.ndarray):
         return FlightSolverResult(self.t, self.x + offset[0], self.y + offset[1], self.vx, self.vy)
 
-    def find_closest_point(self, astro_object=None):
-        """
-        If astro_object is not None, finds a trajectory point that is the closest one to the astro_object.
-        Otherwise, finds the closest point to (0, 0).
-
-        :param astro_object: target AstronomicalObject
-        :return: point index, distance
-        """
-
-        if astro_object is None:
-            rel_x = self.x
-            rel_y = self.y
+    def find_closest_point(
+            self, timescale: skyfield.timelib.Timescale,
+            astro_obj: AstronomicalObject | None = None,
+            central_obj: AstronomicalObject | None = None
+    ):
+        if astro_obj is None:
+            rel_pos = np.array((self.x, self.y))
         else:
-            astro_object_pos = astro_object.get_position(self.t)
-            rel_x = self.x - astro_object_pos[:, 0]
-            rel_y = self.y - astro_object_pos[:, 1]
+            spacecraft_trajectory = np.array((self.x, self.y))
+            astro_obj_trajectory = astro_obj.get_relative_position(central_obj, seconds_to_date(timescale, self.t))
+            rel_pos = spacecraft_trajectory - astro_obj_trajectory
 
-        sqr_dist = rel_x * rel_x + rel_y * rel_y
+        sqr_dist = rel_pos[0] ** 2 + rel_pos[1] ** 2
         best_i = np.argmin(sqr_dist)
 
         return best_i, np.sqrt(sqr_dist[best_i])
 
-    def find_periapsis(self, astro_object, max_angle_deg):
-        """
-        Finds a trajectory point that can be used to enter astro_object's orbit:
-        1. Filters out points whose angle between velocity and a radius vector
-        to the astro_object deviates from 90° more than for max_angle_deg degrees.
-        2. Finds the closest one among them.
-
-        :param astro_object: target AstronomicalObject
-        :param max_angle_deg: smaller angle means the more circular orbit
-        :return: point index, periapsis radius, deviation in degrees
-        """
-
-        obj_pos = astro_object.get_position(self.t)
-        rel_x = self.x - obj_pos[:, 0]
-        rel_y = self.y - obj_pos[:, 1]
-
-        sqr_dist = rel_x ** 2 + rel_y ** 2
-        r_norm = np.sqrt(sqr_dist)
-
-        dot = self.vx * rel_x + self.vy * rel_y
-        v_norm = np.sqrt(self.vx ** 2 + self.vy ** 2)
-
-        cos_angle = dot / (v_norm * r_norm)
-        cos_angle = np.clip(cos_angle, -1.0, 1.0)  # Clamp numerical noise
-        deviation_deg = np.abs(np.degrees(np.arccos(cos_angle)) - 90)
-
-        max_deviation = max(max_angle_deg, np.min(deviation_deg))  # Ensure at least one match
-
-        # Find indices where angle deviates from 90° by less than max_angle
-        candidate_indices = np.where(deviation_deg < max_deviation)[0]
-
-        # Among candidates, choose the one with the smallest distance
-        best_i = candidate_indices[np.argmin(r_norm[candidate_indices])]
-
-        return best_i, r_norm[best_i], deviation_deg[best_i]
+    def find_last_point_distance(
+            self, timescale: skyfield.timelib.Timescale,
+            astro_obj: AstronomicalObject | None = None,
+            central_obj: AstronomicalObject | None = None
+    ):
+        spacecraft_pos = np.array((self.x[-1], self.y[-1]))
+        astro_obj_pos = astro_obj.get_relative_position(central_obj, seconds_to_date(timescale, self.t[-1]))
+        rel_pos = spacecraft_pos - astro_obj_pos
+        dist = np.sqrt(rel_pos[0] ** 2 + rel_pos[1] ** 2)
+        return dist
 
 
 class FlightSolver:
