@@ -5,6 +5,9 @@ from tools.instances import *
 from tools.plots import *
 
 
+IGNORE_MARS = False
+
+
 def full_earth_to_mars_mission(
         earth_orbit_radius,
         escape_date,
@@ -52,29 +55,32 @@ def full_earth_to_mars_mission(
         date_span=(escape_date, insert_date)
     )
 
-    # Mars orbit insertion
-    mars_pos_at_insert = MARS.get_relative_position(SUN, insert_date)
-    insert_pos_vector = np.array((trans_res.x[-1], trans_res.y[-1])) - mars_pos_at_insert
+    if not IGNORE_MARS:
+        # Mars orbit insertion
+        mars_pos_at_insert = MARS.get_relative_position(SUN, insert_date)
+        insert_pos_vector = np.array((trans_res.x[-1], trans_res.y[-1])) - mars_pos_at_insert
 
-    mars_v_at_insert = MARS.get_relative_velocity(SUN, insert_date)
-    insert_v_vector = np.array((trans_res.vx[-1], trans_res.vy[-1])) - mars_v_at_insert
-    insert_v = np.linalg.norm(insert_v_vector)
-    insert_v_dir = insert_v_vector / insert_v
+        mars_v_at_insert = MARS.get_relative_velocity(SUN, insert_date)
+        insert_v_vector = np.array((trans_res.vx[-1], trans_res.vy[-1])) - mars_v_at_insert
+        insert_v = np.linalg.norm(insert_v_vector)
+        insert_v_dir = insert_v_vector / insert_v
 
-    mars_encounter_dist = np.linalg.norm(insert_pos_vector)
-    insert_delta_v = MARS.get_elliptical_orbit_velocity(mars_orbit_semimajor, mars_encounter_dist) - insert_v
+        mars_encounter_dist = np.linalg.norm(insert_pos_vector)
+        insert_delta_v = MARS.get_elliptical_orbit_velocity(mars_orbit_semimajor, mars_encounter_dist) - insert_v
 
-    mars_orbit_period = MARS.get_orbital_period(mars_orbit_semimajor)
-    end_date = date_plus_seconds(insert_date, mars_orbit_period)
+        mars_orbit_period = MARS.get_orbital_period(mars_orbit_semimajor)
+        end_date = date_plus_seconds(insert_date, mars_orbit_period)
 
-    mars_res = SOLVER.solve(
-        [MARS],
-        x0=insert_pos_vector[0],
-        y0=insert_pos_vector[1],
-        vx0=insert_v_vector[0] + insert_v_dir[0] * insert_delta_v,
-        vy0=insert_v_vector[1] + insert_v_dir[1] * insert_delta_v,
-        date_span=(insert_date, end_date)
-    )
+        mars_res = SOLVER.solve(
+            [MARS],
+            x0=insert_pos_vector[0],
+            y0=insert_pos_vector[1],
+            vx0=insert_v_vector[0] + insert_v_dir[0] * insert_delta_v,
+            vy0=insert_v_vector[1] + insert_v_dir[1] * insert_delta_v,
+            date_span=(insert_date, end_date)
+        )
+    else:
+        print('DEVIATION:', np.linalg.norm(np.array(trans_res.x[-1], trans_res.y[-1]) - MARS.get_relative_position(SUN, insert_date)))
 
     # Output near-Earth results
     trans_dates = seconds_to_date(TIMESCALE, trans_res.t)
@@ -105,23 +111,26 @@ def full_earth_to_mars_mission(
     print(f'Velocity (Earth): {np.linalg.norm(EARTH.abs_v_to_rel(SUN, escape_date, escape_v_vector)):.4f} m/s')
     print(f'Velocity (Sun): {np.linalg.norm(escape_v_vector):.4f} m/s')
 
-    # Output near-Mars results
-    near_mars_res = trans_res.with_pos_offset(-MARS.get_relative_position(SUN, trans_dates)) + mars_res
-    plot_trajectory_obj_and_soi(
-        TIMESCALE, MARS, SUN, insert_date,
-        near_mars_res.x, near_mars_res.y, -1,
-        file_prefix=file_prefix
-    )
+    if not IGNORE_MARS:
+        # Output near-Mars results
+        near_mars_res = trans_res.with_pos_offset(-MARS.get_relative_position(SUN, trans_dates)) + mars_res
+        plot_trajectory_obj_and_soi(
+            TIMESCALE, MARS, SUN, insert_date,
+            near_mars_res.x, near_mars_res.y, -1,
+            file_prefix=file_prefix
+        )
 
-    print('\n--- Mars encounter ---')
-    print(f'Velocity (Mars): {insert_v:.4f} m/s')
-    print(f'Velocity (Sun): {np.hypot(trans_res.vx[-1], trans_res.vy[-1]):.4f} m/s')
+        print('\n--- Mars encounter ---')
+        print(f'Velocity (Mars): {insert_v:.4f} m/s')
+        print(f'Velocity (Sun): {np.hypot(trans_res.vx[-1], trans_res.vy[-1]):.4f} m/s')
 
-    print('\n--- Mars orbit insert ---')
-    print(f'Delta days: {insert_date - escape_date:.4f} days')
-    print('Insert date:', insert_date.utc_iso())
-    print(f'Mars encounter distance: {mars_encounter_dist:.4f} m')
-    print(f'Mars semimajor: {mars_orbit_semimajor:.4f} m')
-    print(f'Delta v: {insert_delta_v:.4f} m/s')
+        print('\n--- Mars orbit insert ---')
+        print(f'Delta days: {insert_date - escape_date:.4f} days')
+        print('Insert date:', insert_date.utc_iso())
+        print(f'Mars encounter height: {mars_encounter_dist-MARS.radius:.4f} m')
+        print(f'Mars semimajor: {mars_orbit_semimajor:.4f} m')
+        print(f'Delta v: {insert_delta_v:.4f} m/s')
 
-    return insert_delta_v
+        return insert_delta_v
+
+    return -1

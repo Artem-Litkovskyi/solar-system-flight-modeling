@@ -18,12 +18,12 @@ def trajectories_table(trajectory_function, escape_dates, antisolar_offsets, esc
         for d, o, v in itertools.product(escape_dates, antisolar_offsets, escape_delta_vs)
     )
 
-    total_sims = escape_dates.size * antisolar_offsets.size * escape_delta_vs.size
+    total_sims = escape_dates.shape[0] * antisolar_offsets.size * escape_delta_vs.size
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         results_iterator = executor.map(trajectories_table_wrapper, param_generator)
         results_flat = list(tqdm(results_iterator, total=total_sims, desc='Simulating Trajectories'))
 
-    results = np.array(results_flat, dtype=FlightSolverResult).reshape(escape_dates.size, antisolar_offsets.size, escape_delta_vs.size)
+    results = np.array(results_flat, dtype=FlightSolverResult).reshape(escape_dates.shape[0], antisolar_offsets.size, escape_delta_vs.size)
 
     return results
