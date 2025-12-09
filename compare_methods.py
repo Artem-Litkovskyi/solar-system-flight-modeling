@@ -46,8 +46,8 @@ def main():
     print('Best rtol:', rtols[best_rtol_i])
     print('Best atol:', atols[best_atol_i])
 
-    make_table('methods_and_rtols.csv', methods, rtols, m_and_r_err)
-    make_table('atols.csv', ['error'], atols, [a_err])
+    make_table('compare_methods_and_rtols.csv', methods, rtols, m_and_r_err)
+    make_table('compare_atols.csv', ['error'], atols, [a_err])
 
 
 def get_error(method, rtol, atol):

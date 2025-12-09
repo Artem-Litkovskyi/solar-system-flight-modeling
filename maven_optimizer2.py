@@ -2,7 +2,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 from tools.instances import *
-from maven_optimizer1 import ESCAPE_DATE, earth_to_mars_transfer
+from maven_optimizer1 import ESCAPE_DATES, earth_to_mars_trajectory
 
 
 INIT_ANTISOLAR_OFFSET = -32
@@ -34,8 +34,8 @@ def main():
 def distance_to_mars(args):
     antisolar_offset_scaled, escape_delta_v_scaled = args
 
-    res = earth_to_mars_transfer(
-        ESCAPE_DATE,
+    res = earth_to_mars_trajectory(
+        ESCAPE_DATES[0],
         antisolar_offset_scaled / ANTISOLAR_OFFSET_SCALE,
         escape_delta_v_scaled / DELTA_V_SCALE
     )

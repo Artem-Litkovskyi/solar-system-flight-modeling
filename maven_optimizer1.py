@@ -3,46 +3,35 @@ import numpy as np
 from tools.core import *
 from tools.instances import *
 from tools.tables import make_table
-from sim_runner import run_simulations
+from sim_runner import trajectories_table
 
 
-# Earth Parking Orbit
 EARTH_ORBIT_RADIUS = EARTH.radius + 400e3
 
-ESCAPE_DATE = TIMESCALE.utc(2013, 10, 18, 18, 28)
+ESCAPE_DATES = np.array((TIMESCALE.utc(2013, 10, 18, 18, 28),))
+ESCAPE_ANTISOLAR_OFFSETS = np.linspace(-10, -55, 10)
+ESCAPE_DELTA_VS = np.linspace(4000, 4099, 10)
 
-ESCAPE_ANTISOLAR_OFFSET_SPAN = (-10, -55)  # degrees
-ESCAPE_ANTISOLAR_OFFSET_NUM = 10
-
-ESCAPE_DELTA_V_SPAN = (4000, 4099)
-ESCAPE_DELTA_V_NUM = 10
-
-
-# Mars Orbit Insertion
 INSERT_DELTA_DAYS = TIMESCALE.utc(2014, 9, 22, 2, 24) - TIMESCALE.utc(2013, 10, 18, 18, 28)
 
 
 def main():
-    dates, offsets, delta_vs, results = run_simulations(
-        earth_to_mars_transfer,
-        (ESCAPE_DATE, ESCAPE_DATE), 1,
-        ESCAPE_ANTISOLAR_OFFSET_SPAN, ESCAPE_ANTISOLAR_OFFSET_NUM,
-        ESCAPE_DELTA_V_SPAN, ESCAPE_DELTA_V_NUM
+    results = trajectories_table(
+        earth_to_mars_trajectory, ESCAPE_DATES, ESCAPE_ANTISOLAR_OFFSETS, ESCAPE_DELTA_VS
     )
 
-    dist = np.zeros((ESCAPE_ANTISOLAR_OFFSET_NUM, ESCAPE_DELTA_V_NUM), dtype=float)
+    dist = np.zeros((ESCAPE_ANTISOLAR_OFFSETS.size, ESCAPE_DELTA_VS.size), dtype=float)
 
-    for i, date in enumerate(dates):
-        for j, offset in enumerate(offsets):
-            for k, delta_v in enumerate(delta_vs):
+    for i, date in enumerate(ESCAPE_DATES):
+        for j, offset in enumerate(ESCAPE_ANTISOLAR_OFFSETS):
+            for k, delta_v in enumerate(ESCAPE_DELTA_VS):
                 res = results[i, j, k]
                 dist[j, k] = res.find_last_point_distance(TIMESCALE, MARS, SUN) - MARS.radius
 
-    make_table('MAVEN_dist.csv', offsets, delta_vs, dist)
+    make_table('MAVEN_dist.csv', ESCAPE_ANTISOLAR_OFFSETS, ESCAPE_DELTA_VS, dist)
 
 
-# Simulate a single flight with given parameters
-def earth_to_mars_transfer(escape_date, antisolar_offset, escape_delta_v):
+def earth_to_mars_trajectory(escape_date, antisolar_offset, escape_delta_v):
     antisolar_dir = EARTH.get_relative_position(SUN, escape_date)
     antisolar_dir /= np.linalg.norm(antisolar_dir)
 
