@@ -164,3 +164,5 @@ cython_debug/
 
 # Project specific ignores
 plots/
+tables/
+skyfield_data/
